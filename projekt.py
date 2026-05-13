@@ -38,8 +38,9 @@ class GraphGUI:
 		self.selected_node = None
 		self.hovered_node = None
 		self.hovered_edge = None
+		self.was_dragged = False
 		# Inicjalizacja płaszczyzny rysowania
-		self.figure, self.ax = plt.subplots(figsize=(5, 4))
+		self.figure, self.ax = plt.subplots(figsize=(8, 6))
 		self.canvas = FigureCanvasTkAgg(self.figure, master=self.master)
 		self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
 		self.canvas.mpl_connect('button_press_event', self.on_canvas_click)
@@ -103,7 +104,7 @@ class GraphGUI:
 			# Arborescencja skierowana (czyste strzałki skierowane): szukamy korzenia (in-degree == 0)
 			roots = [n for n, d in self.G.in_degree() if d == 0]
 			if len(roots) != 1:
-				messagebox.showwarning("Błąd", "Graf skierowany nie jest drzewem!\nPowód: Graf musi posiadać dokładnie jeden korzeń (wierzchołek bez krawędzi wchodzących). Możlwe, że ma pętle na szycie lub jest niespójny.")
+				messagebox.showwarning("Błąd", "Graf skierowany nie jest drzewem!\nPowód: Graf musi posiadać dokładnie jeden korzeń (wierzchołek bez krawędzi wchodzących).")
 				return
 
 			root = roots[0]
@@ -126,7 +127,7 @@ class GraphGUI:
 				return
 
 		# Jesli przeszlismy pomyślnie walidacje, szukamy średnicy!
-		self.find_diameter(root)
+		self.find_diameter()
 
 	def dfs_longest_path(self, current_node, current_dist, max_info, visited):
 		# Zwykły, rekurencyjny DFS znajdujący najdłuższą ścieżkę do liścia
@@ -164,54 +165,64 @@ class GraphGUI:
 
 		visited.remove(current_node)
 
-	def find_diameter(self, start_root):
-		# ETAP 1: Puszczamy DFS by znaleźć pierwszy liść od korzenia (Zastępuje zepsutego Bellmana o 150 tys. ujemnych pętlach).
-		# Info z max dystansiem: [Farthest Node, Max Distance, Predecessors_Dict]
-		pred_A = {node: None for node in self.G.nodes()}
-		info_A = [start_root, 0, pred_A]
-		self.dfs_longest_path(start_root, 0, info_A, set())
-		node_A = info_A[0]
+	# Znajdywanie średnicy drzewa
+	def find_diameter(self):
+		self.global_max_diameter = float('-inf')
+		self.diameter_path = []
 
-		# ETAP 2: Puszczamy drugi DFS z node_A (nasz znaleziony skrajny lisc nr 1), by dolinieć do najdalszego liścia z drugiej str (node_B).
-		pred_B = {node: None for node in self.G.nodes()}
-		info_B = [node_A, 0, pred_B]
-		self.dfs_longest_path(node_A, 0, info_B, set())
-		node_B = info_B[0]
-		diameter_dist = int(info_B[1])
+		nodes = list(nx.Graph(self.G).nodes())
+		G_undir = nx.Graph(self.G)
 
-		# Odtwarzanie ścieżki z node_B w tył śladami predecessorów
-		path = []
-		current = node_B
-		# zabezpieczenie przez kręcącą się pętlą na zepsutych strukturach
-		visited_retrace = set()
-		while current is not None:
-			if current in visited_retrace:
-				break
-			visited_retrace.add(current)
-			path.append(current)
-			current = pred_B[current]
+		# Dla grafu pustego opuść funkcję
+		if not nodes:
+			messagebox.showwarning("Błąd", "Graf jest pusty - nie można znaleźć średnicy.")
+			return
 
-		# path jest teraz węzłami od B do A [B, ..., A]. Tworzymy krawędzie
+		# Dla jednego wierzchołka średnica to 0, a ścieżka to ten wierzchołek
+		if len(nodes) == 1:
+			self.global_max_diameter = 0
+			self.diameter_path = [nodes[0]]
+		else:
+			# Liście to wierzchołki, które mają tylko jednego sąsiada
+			leaves = [n for n in nodes if G_undir.degree(n) == 1]
+			#Dla kazdego z lisci robimy rozudowanego DFS
+			for start_node in leaves:
+				stack = [(start_node, 0, [start_node])]
+
+				while stack:
+					current_node, current_dist, path = stack.pop()
+
+					# Jeśli jest to liść i ścieka jest większa niz 1 to zwiększ global_max_diameter i zapisz ścieżkę
+					if len(path) > 1 and current_node in leaves and current_node != start_node:
+						if current_dist > self.global_max_diameter:
+							self.global_max_diameter = current_dist
+							self.diameter_path = path
+					
+					# Przeszukaj sąsiadów, którzy nie są na ściezce
+					for neighbor in G_undir.neighbors(current_node):
+						if neighbor not in path:
+							w = 1
+							if G_undir.has_edge(current_node, neighbor):
+								w_str = G_undir[current_node][neighbor].get('weight', 1)
+								try:
+									w = int(w_str)
+								except ValueError:
+									pass
+							# i dodaj sprawedzenie do stosu z aktualizacją ścieżki i wagi
+							stack.append((neighbor, current_dist + w, path + [neighbor]))
+
 		diameter_edges = []
-		for i in range(len(path) - 1):
-			# Przypina kolory po śladzie wezłów z lewej do prawej
-			u = path[i]
-			v = path[i+1]
-			if self.G.has_edge(u, v):
-				diameter_edges.append((u, v))
-			elif self.G.has_edge(v, u):
-				diameter_edges.append((v, u))
-			else:
-				# Obsługa jeśli mamy patchowaną dwukierunkowość
+		for i in range(len(self.diameter_path) - 1):
+			u = self.diameter_path[i]
+			v = self.diameter_path[i+1]
+			if self.G.has_edge(u, v): diameter_edges.append((u, v))
+			elif self.G.has_edge(v, u): diameter_edges.append((v, u))
+			else: 
 				diameter_edges.append((u, v))
 				diameter_edges.append((v, u))
 
-		# Odwracanie listy, żeby ścieżka wyświetlała się logicznie od A do B
-		path_correct_order = list(reversed(path))
-		path_string = " -> ".join(map(str, path_correct_order))
-
-		messagebox.showinfo("Wynik - Średnica Drzewa", f"Znaleziono średnicę drzewa!\n\nWartość średnicy wynosi: {diameter_dist}\n\nPrzebieg ścieżki:\n{path_string}\n\nŚcieżka średnicy na wykresie zaraz zostanie oznaczona kolorem zielonym.")
-
+		path_string = " -> ".join(map(str, self.diameter_path))
+		messagebox.showinfo("Wynik - Średnica Drzewa", f"Znaleziono średnicę drzewa!\n\nWartość średnicy wynosi: {self.global_max_diameter}\n\nPrzebieg ścieżki:\n{path_string}\n\nŚcieżka średnicy na wykresie zaraz zostanie oznaczona kolorem zielonym.")
 		self.highlight_diameter(diameter_edges)
 
 	def highlight_diameter(self, edge_list):
@@ -268,11 +279,15 @@ class GraphGUI:
 					if not row:
 						continue
 					
+					try:
+						node = int(row[0])
+					except ValueError:
+						messagebox.showwarning("Błąd", f"Nie można zaimportować wiersza. Węzły muszą być reprezentowane jako liczby całkowite.")
+						return
+
 					if len(row) == 1:
-						self.G.add_node(row[0])
+						self.G.add_node(node)
 					elif len(row) >= 2:
-						node = row[0]
-						
 						is_edge_list = False
 						weight = 1
 						if len(row) == 3:
@@ -280,13 +295,20 @@ class GraphGUI:
 								weight = int(row[2])
 								is_edge_list = True
 							except ValueError:
-								pass
+								messagebox.showwarning("Błąd", f"Nie można zaimportować wiersza. Wagi muszą być reprezentowane jako liczby całkowite.")
+								return
 						
 						if is_edge_list:
-							self.G.add_edge(node, row[1], weight=weight)
+							try:
+								node = int(row[0])
+								neighbor = int(row[1])
+							except ValueError:
+								messagebox.showwarning("Błąd", f"Nie można zaimportować wiersza. Węzły muszą być reprezentowane jako liczby całkowite.")
+								return
+							self.G.add_edge(node, neighbor, weight=weight)
 							# Ustaw wagę w obie strony równą
-							if self.G.has_edge(row[1], node):
-								self.G[row[1]][node]['weight'] = weight
+							if self.G.has_edge(neighbor, node):
+								self.G[neighbor][node]['weight'] = weight
 						else:
 							neighbors = row[1:]
 							for neighbor in neighbors:
@@ -324,14 +346,15 @@ class GraphGUI:
 			messagebox.showinfo("Sukces", "Graf został poprawnie wyeksportowany.")
 		except Exception as e:
 			messagebox.showerror("Błąd", f"Nie można wyeksportować grafu: {e}")
+
 	# Tworzy losowy graf z wagami [-20, 20] i n wierzchołkami oraz m krawędziami
 	def create_random_graph(self):
 		n = simpledialog.askinteger("Losowy Graf", "Liczba wierzchołków (n):", minvalue=1, maxvalue=100, initialvalue=10)
-		m = simpledialog.askinteger("Losowy Graf", "Liczba krawędzi (m):", minvalue=0, maxvalue=n*(n-1)//2, initialvalue=min(n*(n-1)//4, 10))
+		m = simpledialog.askinteger("Losowy Graf", "Liczba krawędzi (m):", minvalue=0, maxvalue=n*(n-1)//2, initialvalue=9)
 		if n is None or m is None:
 			return
 		if m > n*(n-1)//2:
-			messagebox.showerror("Błąd!", "Przekroczono maksymalną liczbę krawędzi dla grafu prostego")
+			messagebox.showerror("Błąd!", "Przekroczono maksymalną liczbę krawędzi dla grafu prostego.\n Nie wprowadzono grafu.")
 			return
 		
 		self.G.clear()
