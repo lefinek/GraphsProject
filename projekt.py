@@ -293,6 +293,9 @@ class GraphGUI:
 						if len(row) == 3:
 							try:
 								weight = int(row[2])
+								if weight == 0:
+									messagebox.showwarning("Błąd", "Waga krawędzi nie może być zerowa. Krawędź nie została dodana.")
+									continue
 								is_edge_list = True
 							except ValueError:
 								messagebox.showwarning("Błąd", f"Nie można zaimportować wiersza. Wagi muszą być reprezentowane jako liczby całkowite.")
@@ -432,6 +435,11 @@ class GraphGUI:
 					u, v = self.selected_node, clicked_node
 					if not self.G.has_edge(u, v):
 						weight = simpledialog.askinteger("Waga krawędzi", f"Wprowadź wagę {u}->{v}:", initialvalue=1)
+						if weight == 0:
+							messagebox.showwarning("Błąd", "Waga krawędzi nie może być zerowa. Krawędź nie została dodana.")
+							self.selected_node = None
+							self.draw_graph()
+							return
 						if weight is not None:
 							self.G.add_edge(u, v, weight=weight)
 							if self.G.has_edge(v, u):
