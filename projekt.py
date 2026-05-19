@@ -97,6 +97,7 @@ class GraphGUI:
 
 		if num_edges != (num_nodes - 1) and not is_bidirectional_tree:
 			messagebox.showwarning("Błąd", f"Graf nie jest drzewem!\nPowód: Posiada {num_nodes} wierzchołków i {num_edges} krawędzi (powinno być {num_nodes - 1} dla skierowanego, albo ułożone dwustronnie).")
+			self.prompt_save_current_graph()
 			return
 
 		# 3. Sprawdzenie typu grafu i poszukiwanie korzenia / spójności przy użyciu DFS
@@ -105,6 +106,7 @@ class GraphGUI:
 			roots = [n for n, d in self.G.in_degree() if d == 0]
 			if len(roots) != 1:
 				messagebox.showwarning("Błąd", "Graf skierowany nie jest drzewem!\nPowód: Graf musi posiadać dokładnie jeden korzeń (wierzchołek bez krawędzi wchodzących).")
+				self.prompt_save_current_graph()
 				return
 
 			root = roots[0]
@@ -112,6 +114,7 @@ class GraphGUI:
 			visited = list(nx.dfs_preorder_nodes(self.G, source=root))
 			if len(visited) != num_nodes:
 				messagebox.showwarning("Błąd", "Graf skierowany nie jest drzewem!\nPowód: Graf nie jest spójny pod kątem skierowania (z korzenia nie można dotrzeć do każdego węzła).")
+				self.prompt_save_current_graph()
 				return
 
 			messagebox.showinfo("Sukces", f"Zbudowany graf reprezentuje poprawne DRZEWO SKIEROWANE.\nZidentyfikowany korzeń to: Węzeł '{root}'")
@@ -124,10 +127,107 @@ class GraphGUI:
 			visited = list(nx.dfs_preorder_nodes(test_graph, source=root))
 			if len(visited) != num_nodes:
 				messagebox.showwarning("Błąd", "Graf nie jest drzewem!\nPowód: Graf jest niespójny i składa się z rozłącznych części.")
+				self.prompt_save_current_graph()
 				return
 
 		# Jesli przeszlismy pomyślnie walidacje, szukamy średnicy!
 		self.find_diameter()
+
+	def prompt_save_current_graph(self):
+		dialog = tk.Toplevel(self.master)
+		dialog.title("Zapisywanie obecnego grafu")
+		dialog.geometry("380x280")
+
+		dialog.transient(self.master)
+		dialog.grab_set()
+
+		lbl = tk.Label(dialog, text="Czy chcesz zapisać aktualny graf do pliku? Jeśli tego nie zrobisz - zostanie on nadpisany i utracony", wraplength=350)
+		lbl.pack(pady=10)
+
+		btn_save_graph = tk.Button(dialog, text="Zapisz do pliku", command=lambda: self.export_csv(dialog))
+		btn_save_graph.pack(pady=5)
+
+		btn_deny_save = tk.Button(dialog, text="Nie zapisuj", command=lambda: self.prompt_make_tree(dialog))
+		btn_deny_save.pack(pady=5)
+		
+		btn_cancel = tk.Button(dialog, text="Anuluj", command=dialog.destroy)
+		btn_cancel.pack(pady=5)
+
+		dialog.wait_window()
+
+	def prompt_make_tree(self, di = None):
+		if not self.G.nodes:
+			return
+	
+		if di:
+			di.destroy()
+
+		dialog = tk.Toplevel(self.master)
+		dialog.title("Tworzenie drzewa z grafu")
+		dialog.geometry("380x280")
+
+		dialog.transient(self.master)
+		dialog.grab_set()
+
+		lbl = tk.Label(dialog, text="Graf nie jest drzewem.\nWybierz węzeł startowy i metodę, aby wygenerować drzewo:", wraplength=350)
+		lbl.pack(pady=10)
+
+		node_var = tk.StringVar(dialog)
+		nodes = list(self.G.nodes)
+		node_var.set(str(nodes[0]))
+
+		dropdown = tk.OptionMenu(dialog, node_var, *[str(n) for n in nodes])
+		dropdown.pack(pady=5)
+
+		def create_tree(method):
+			selected_str = node_var.get()
+			start_node = next((n for n in self.G.nodes if str(n) == selected_str), None)
+
+			if start_node is None:
+				return
+
+			#Weryfikacja czy graf jest nieskierowany
+			is_bidirected = all(self.G.has_edge(v, u) for u, v in self.G.edges())
+
+			# Ze względu na to, że bfs_tree i dfs_tree ignorują nieskierowane połączenia w grafach DiGraph,
+			# musimy upewnić się, że algorytmy przeszukują krawędzie w obie strony, jeśli graf reprezentuje graf nieskierowany
+			undirected_G = nx.Graph(self.G)
+
+			if method == "BFS":
+				T = nx.bfs_tree(undirected_G, start_node)
+			else:
+				T = nx.dfs_tree(undirected_G, start_node)
+
+			new_G = nx.DiGraph()
+			new_G.add_nodes_from(T.nodes)
+			for u, v in T.edges:
+				w = 1
+				if self.G.has_edge(u, v):
+					w = self.G[u][v].get('weight', 1)
+				elif self.G.has_edge(v, u):
+					w = self.G[v][u].get('weight', 1)
+				new_G.add_edge(u, v, weight=w)
+				# dla nieskierowanego grafu
+				if is_bidirected:
+					new_G.add_edge(v, u, weight=w)
+
+			self.G = new_G
+			self.rebuild_graph()
+			self.draw_graph()
+			dialog.destroy()
+
+			self.check_if_tree()
+
+		btn_bfs = tk.Button(dialog, text="Stwórz drzewo przez BFS", command=lambda: create_tree("BFS"))
+		btn_bfs.pack(pady=5)
+
+		btn_dfs = tk.Button(dialog, text="Stwórz drzewo przez DFS", command=lambda: create_tree("DFS"))
+		btn_dfs.pack(pady=5)
+
+		btn_cancel = tk.Button(dialog, text="Anuluj", command=dialog.destroy)
+		btn_cancel.pack(pady=5)
+
+		dialog.wait_window()
 
 	def dfs_longest_path(self, current_node, current_dist, max_info, visited):
 		# Zwykły, rekurencyjny DFS znajdujący najdłuższą ścieżkę do liścia
@@ -325,7 +425,7 @@ class GraphGUI:
 			messagebox.showerror("Błąd!", f"Nie można zaimportować pliku CSV: {e}")
 
 	# Eksportowanie grafu do pliku CSV
-	def export_csv(self):
+	def export_csv(self, dialog = None):
 		file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV Files", "*.csv")])
 		if not file_path:
 			return
@@ -347,6 +447,11 @@ class GraphGUI:
 						writer.writerow([node])
 						
 			messagebox.showinfo("Sukces", "Graf został poprawnie wyeksportowany.")
+			
+			if dialog:
+				dialog.destroy()
+				self.prompt_make_tree()
+				return
 		except Exception as e:
 			messagebox.showerror("Błąd", f"Nie można wyeksportować grafu: {e}")
 
@@ -425,7 +530,7 @@ class GraphGUI:
 			clicked_node = None
 			for node, pos in self.node_positions.items():
 				dist = (pos[0] - x) ** 2 + (pos[1] - y) ** 2
-				if dist < 0.02:
+				if dist < 0.01:
 					clicked_node = node
 					break
             
