@@ -41,6 +41,7 @@ class GraphGUI:
 		self.was_dragged = False
 		# Inicjalizacja płaszczyzny rysowania
 		self.figure, self.ax = plt.subplots(figsize=(8, 6))
+		self.figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
 		self.canvas = FigureCanvasTkAgg(self.figure, master=self.master)
 		self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
 		self.canvas.mpl_connect('button_press_event', self.on_canvas_click)
