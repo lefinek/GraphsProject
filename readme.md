@@ -45,11 +45,10 @@ Właściwe działanie algorytmu rozpoczyna się wraz z wybraniem przycisku [Szuk
 #### Wybieranie wierchołka do akcji
 - kliknij na wierzchołek, aby go wybrać do akcji
 #### Wychodzenie z trybu akcji wierzchołka
-- kliknij poza wierzchołkiem na planszy
 - naciśnij przycisk ESC na klawiaturze
 #### Usuwanie wierzchołka
 - kliknij prawym przyciskiem myszy na wierzchołek
-- naciścnij przycisk ESC po wcześniejszym wybraniu wierzchołka do akcji
+- naciścnij przycisk DELETE po wcześniejszym wybraniu wierzchołka do akcji
 #### Przenoszsenie wierzchołka na planszy
 - kliknij i przytrzymaj lewy przycisk myszy na wierzchołku. Przesuwaj myszą
 #### Przybliżanie i oddalanie
